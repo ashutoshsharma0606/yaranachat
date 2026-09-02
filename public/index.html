@@ -128,21 +128,6 @@
       }
     };
 
-    // Instant bypass login for testing & local usage without domain restriction issues
-    function loginAsDeveloperDemo() {
-      const randomId = 'dev_user_' + Math.floor(Math.random() * 100000);
-      currentUser = {
-        _id: randomId,
-        name: 'Sharma Developer',
-        email: 'sharmagroup@official.com',
-        friends: [],
-        pendingRequests: [],
-        sentRequests: []
-      };
-      socket.emit('join_room', currentUser);
-      render();
-    }
-
     async function refreshUserData() {
       if (!currentUser) return;
       try {
@@ -308,11 +293,6 @@
                      data-size="large"
                      data-logo_alignment="left">
                 </div>
-
-                <!-- Instant Access Button for Testing & Bypassing Domain Restrictions -->
-                <button onclick="loginAsDeveloperDemo()" class="w-full py-2.5 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-bold text-xs rounded-full shadow-lg shadow-orange-600/30 transition cursor-pointer">
-                  🚀 Quick Enter (Bypass Sign-In)
-                </button>
               </div>
 
               <!-- Official Sharma Group Social Handles -->
