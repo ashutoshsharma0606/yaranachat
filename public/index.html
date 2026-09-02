@@ -13,6 +13,10 @@
       50% { opacity: 0.8; }
       100% { transform: translateY(-100vh) translateX(50px); opacity: 0; }
     }
+    @keyframes floatCard {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-8px) rotate(1deg); }
+    }
     .bg-communication-mesh {
       background-color: #03050c;
       background-image: 
@@ -31,6 +35,9 @@
       box-shadow: 0 0 15px rgba(249, 115, 22, 0.9);
       animation: floatParticle 7s infinite linear;
       border-radius: 50%;
+    }
+    .floating-card {
+      animation: floatCard 6s ease-in-out infinite;
     }
     .glass-card {
       background: rgba(12, 16, 28, 0.88);
@@ -276,7 +283,7 @@
       if (!currentUser) {
         app.innerHTML = `
           <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-            <div class="max-w-md w-full glass-card p-8 rounded-3xl text-center shadow-2xl space-y-6">
+            <div class="max-w-md w-full glass-card p-8 rounded-3xl text-center shadow-2xl space-y-6 floating-card">
               <div class="w-16 h-16 bg-gradient-to-tr from-orange-600 to-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-orange-600/40 text-white font-bold text-2xl">YC</div>
               <div>
                 <h1 class="text-2xl font-black tracking-tight text-white">YaranaChat</h1>
@@ -298,21 +305,34 @@
                      data-logo_alignment="left">
                 </div>
               </div>
+
+              <div class="pt-4 border-t border-white/10 flex flex-wrap justify-center gap-3 text-xs text-gray-400">
+                <a href="https://youtube.com/@sharmaacademy" target="_blank" class="hover:text-orange-400 transition">Sharma Academy YT</a>
+                <span>•</span>
+                <a href="https://github.com/sharma1947" target="_blank" class="hover:text-orange-400 transition">GitHub (sharma1947)</a>
+                <span>•</span>
+                <span class="text-orange-400 font-semibold">Sharma Group Ecosystem</span>
+              </div>
             </div>
           </div>`;
         
-        if (window.google && window.google.accounts) {
-          try {
-            google.accounts.id.initialize({
-              client_id: "580182481566-ohhluh51udp8kc3i31jrb3oqgli1hksb.apps.googleusercontent.com",
-              callback: window.handleGoogleSignIn
-            });
-            google.accounts.id.renderButton(
-              document.querySelector(".g_id_signin"),
-              { theme: "filled_black", size: "large", shape: "pill" }
-            );
-          } catch(err) { console.error(err); }
-        }
+        setTimeout(() => {
+          if (window.google && window.google.accounts) {
+            try {
+              google.accounts.id.initialize({
+                client_id: "580182481566-ohhluh51udp8kc3i31jrb3oqgli1hksb.apps.googleusercontent.com",
+                callback: window.handleGoogleSignIn
+              });
+              const signInDiv = document.querySelector(".g_id_signin");
+              if (signInDiv && signInDiv.childElementCount === 0) {
+                google.accounts.id.renderButton(
+                  signInDiv,
+                  { theme: "filled_black", size: "large", shape: "pill" }
+                );
+              }
+            } catch(err) { console.error(err); }
+          }
+        }, 100);
         return;
       }
 
