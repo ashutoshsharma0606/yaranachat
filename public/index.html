@@ -74,7 +74,6 @@
     let searchQuery = '';
     let feedbackText = '';
     let showFeedbackModal = false;
-    let activeLegalModal = null;
     let soundEnabled = true;
 
     function playNotificationSound() {
@@ -128,6 +127,21 @@
         console.error('Google Auth decoding error:', e);
       }
     };
+
+    // Instant bypass login for testing & local usage without domain restriction issues
+    function loginAsDeveloperDemo() {
+      const randomId = 'dev_user_' + Math.floor(Math.random() * 100000);
+      currentUser = {
+        _id: randomId,
+        name: 'Sharma Developer',
+        email: 'sharmagroup@official.com',
+        friends: [],
+        pendingRequests: [],
+        sentRequests: []
+      };
+      socket.emit('join_room', currentUser);
+      render();
+    }
 
     async function refreshUserData() {
       if (!currentUser) return;
@@ -205,16 +219,6 @@
 
     function handleFeedbackInput(e) {
       feedbackText = e.target.value;
-    }
-
-    function openLegal(type) {
-      activeLegalModal = type;
-      render();
-    }
-
-    function closeLegal() {
-      activeLegalModal = null;
-      render();
     }
 
     async function submitFeedback() {
@@ -304,14 +308,20 @@
                      data-size="large"
                      data-logo_alignment="left">
                 </div>
+
+                <!-- Instant Access Button for Testing & Bypassing Domain Restrictions -->
+                <button onclick="loginAsDeveloperDemo()" class="w-full py-2.5 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-bold text-xs rounded-full shadow-lg shadow-orange-600/30 transition cursor-pointer">
+                  🚀 Quick Enter (Bypass Sign-In)
+                </button>
               </div>
 
+              <!-- Official Sharma Group Social Handles -->
               <div class="pt-4 border-t border-white/10 flex flex-wrap justify-center gap-3 text-xs text-gray-400">
-                <a href="https://youtube.com/@sharmaacademy" target="_blank" class="hover:text-orange-400 transition">Sharma Academy YT</a>
+                <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="hover:text-orange-400 transition">WhatsApp</a>
                 <span>•</span>
-                <a href="https://github.com/sharma1947" target="_blank" class="hover:text-orange-400 transition">GitHub (sharma1947)</a>
+                <a href="https://x.com/SharmaGroup2026" target="_blank" class="hover:text-orange-400 transition">X (Twitter)</a>
                 <span>•</span>
-                <span class="text-orange-400 font-semibold">Sharma Group Ecosystem</span>
+                <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="hover:text-orange-400 transition">YouTube</a>
               </div>
             </div>
           </div>`;
