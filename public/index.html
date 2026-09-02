@@ -66,6 +66,7 @@
     let messages = [];
     let searchResults = [];
     let searchQuery = '';
+    let feedbackText = '';
     let showFeedbackModal = false;
     let activeLegalModal = null;
     let soundEnabled = true;
@@ -124,6 +125,7 @@
       activeChatUser = null;
       messages = [];
       searchResults = [];
+      searchQuery = '';
       render();
     }
 
@@ -133,13 +135,12 @@
 
     async function executeSearch() {
       try {
-        const inputElem = document.getElementById('search-input');
-        if (inputElem) searchQuery = inputElem.value;
-        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery || '')}`);
         searchResults = await res.json();
         render();
       } catch (err) { 
         console.error(err); 
+        searchResults = [];
         render();
       }
     }
@@ -157,7 +158,12 @@
 
     function toggleFeedback(isOpen) {
       showFeedbackModal = isOpen;
+      if (!isOpen) feedbackText = '';
       render();
+    }
+
+    function handleFeedbackInput(e) {
+      feedbackText = e.target.value;
     }
 
     function openLegal(type) {
@@ -171,16 +177,18 @@
     }
 
     async function submitFeedback() {
-      const feedbackInput = document.getElementById('feedback-msg');
-      const text = feedbackInput ? feedbackInput.value : '';
-      if (!text || !text.trim()) return;
-      await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: currentUser.name, email: currentUser.email, message: text })
-      });
-      alert('Feedback submitted successfully!');
-      toggleFeedback(false);
+      if (!feedbackText || !feedbackText.trim()) return;
+      try {
+        await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: currentUser.name, email: currentUser.email, message: feedbackText })
+        });
+        alert('Feedback submitted successfully!');
+        toggleFeedback(false);
+      } catch (err) {
+        console.error(err);
+      }
     }
 
     function sendMessage(e) {
@@ -315,7 +323,7 @@
             <div class="p-4 border-b border-white/10 space-y-3">
               <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Find Connection</p>
               <div class="space-y-2">
-                <input id="search-input" type="text" placeholder="Enter Gmail address..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500">
+                <input type="text" placeholder="Enter Gmail address..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500">
                 <button onclick="executeSearch()" class="w-full py-2.5 bg-[#25324a] hover:bg-[#2f3f5e] border border-white/5 rounded-xl text-xs font-semibold transition cursor-pointer">Search User</button>
               </div>
             </div>
@@ -392,7 +400,7 @@
           <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div class="glass-card p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl border border-white/10">
               <h3 class="font-bold text-sm">Send Feedback</h3>
-              <textarea id="feedback-msg" rows="3" placeholder="Write feedback..." class="w-full bg-[#03050c] border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-orange-500 resize-none"></textarea>
+              <textarea rows="3" oninput="handleFeedbackInput(event)" placeholder="Write feedback..." class="w-full bg-[#03050c] border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-orange-500 resize-none">${feedbackText}</textarea>
               <div class="flex space-x-2">
                 <button onclick="submitFeedback()" class="flex-1 py-2 bg-orange-600 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-lg shadow-orange-600/30">Submit</button>
                 <button onclick="toggleFeedback(false)" class="flex-1 py-2 bg-white/10 rounded-xl text-xs font-semibold text-gray-300 cursor-pointer">Cancel</button>
