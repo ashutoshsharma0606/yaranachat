@@ -1,0 +1,464 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YaranaChat — Secure Messaging by Sharma Group</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    @keyframes floatParticle {
+      0% { transform: translateY(0px) translateX(0px); opacity: 0; }
+      50% { opacity: 0.8; }
+      100% { transform: translateY(-100vh) translateX(50px); opacity: 0; }
+    }
+    .bg-communication-mesh {
+      background-color: #03050c;
+      background-image: 
+        radial-gradient(circle at 20% 30%, rgba(249, 115, 22, 0.2) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.2) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(147, 51, 234, 0.15) 0%, transparent 60%);
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .particle {
+      position: absolute;
+      bottom: -20px;
+      background: rgba(249, 115, 22, 0.5);
+      box-shadow: 0 0 15px rgba(249, 115, 22, 0.9);
+      animation: floatParticle 7s infinite linear;
+      border-radius: 50%;
+    }
+    .glass-card {
+      background: rgba(12, 16, 28, 0.88);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card:hover {
+      border-color: rgba(249, 115, 22, 0.6);
+      transform: translateY(-2px);
+      box-shadow: 0 15px 35px -10px rgba(249, 115, 22, 0.3);
+    }
+  </style>
+</head>
+<body class="bg-[#03050c] text-gray-100 h-screen flex flex-col overflow-hidden font-sans selection:bg-orange-500 selection:text-white relative">
+
+  <div class="bg-communication-mesh">
+    <div class="absolute inset-0 opacity-20 bg-[radial-gradient(#f97316_1.5px,transparent_1.5px)] [background-size:28px_28px]"></div>
+    <div class="particle" style="left: 10%; width: 6px; height: 6px; animation-delay: 0s; animation-duration: 6s;"></div>
+    <div class="particle" style="left: 25%; width: 5px; height: 5px; animation-delay: 2s; animation-duration: 8s;"></div>
+    <div class="particle" style="left: 45%; width: 8px; height: 8px; animation-delay: 1s; animation-duration: 5s;"></div>
+    <div class="particle" style="left: 65%; width: 6px; height: 6px; animation-delay: 3s; animation-duration: 7s;"></div>
+    <div class="particle" style="left: 85%; width: 7px; height: 7px; animation-delay: 1.5s; animation-duration: 9s;"></div>
+  </div>
+
+  <div id="app" class="flex flex-col h-full w-full relative z-10"></div>
+
+  <script>
+    const socket = io();
+    let currentUser = null;
+    let activeChatUser = null;
+    let messages = [];
+    let searchResults = [];
+    let searchQuery = '';
+    let showFeedbackModal = false;
+    let activeLegalModal = null; // 'privacy' or 'terms'
+    let soundEnabled = true;
+
+    // Web Audio API Sound Synthesizer (No external asset files required)
+    function playNotificationSound() {
+      if (!soundEnabled) return;
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 note
+        oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.08); // A5 note
+        gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {
+        console.error('Audio playback error:', e);
+      }
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      render();
+    }
+
+    window.handleGoogleSignIn = function(response) {
+      try {
+        const base64Url = response.credential.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        const googleUser = JSON.parse(jsonPayload);
+        
+        currentUser = { 
+          _id: googleUser.sub, 
+          name: googleUser.name, 
+          email: googleUser.email,
+          picture: googleUser.picture 
+        };
+        socket.emit('join_room', currentUser);
+        executeSearch();
+      } catch (e) {
+        console.error('Google Auth decoding error:', e);
+      }
+    };
+
+    function logout() {
+      currentUser = null;
+      activeChatUser = null;
+      messages = [];
+      render();
+    }
+
+    function handleSearchInput(e) {
+      searchQuery = e.target.value;
+    }
+
+    async function executeSearch() {
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+        searchResults = await res.json();
+        render();
+      } catch (err) { 
+        console.error(err); 
+        render();
+      }
+    }
+
+    async function selectChat(id, name) {
+      activeChatUser = { _id: id, name: name };
+      try {
+        const res = await fetch(`/api/messages/${currentUser._id}/${id}`);
+        messages = await res.json();
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
+        messages = [];
+      }
+      render();
+    }
+
+    function toggleFeedback(isOpen) {
+      showFeedbackModal = isOpen;
+      render();
+    }
+
+    function openLegal(type) {
+      activeLegalModal = type;
+      render();
+    }
+
+    function closeLegal() {
+      activeLegalModal = null;
+      render();
+    }
+
+    async function submitFeedback() {
+      const text = document.getElementById('feedback-msg').value;
+      if (!text || !text.trim()) return;
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: currentUser.name, email: currentUser.email, message: text })
+      });
+      toggleFeedback(false);
+    }
+
+    function sendMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById('msg-input');
+      if (!input || !input.value.trim() || !activeChatUser) return;
+      playNotificationSound();
+      socket.emit('send_message', {
+        sender: currentUser._id,
+        recipient: activeChatUser._id,
+        text: input.value
+      });
+      input.value = '';
+    }
+
+    socket.on('receive_message', (msg) => {
+      if (activeChatUser && (msg.sender === activeChatUser._id || msg.recipient === activeChatUser._id)) {
+        if (!messages.some(m => m._id === msg._id)) {
+          messages.push(msg);
+          if (msg.sender !== currentUser._id) {
+            playNotificationSound();
+          }
+          render();
+        }
+      }
+    });
+
+    function render() {
+      const app = document.getElementById('app');
+      
+      if (!currentUser) {
+        app.innerHTML = `
+          <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+            
+            <!-- SECURITY & SAFETY BANNER -->
+            <div class="mb-6 max-w-md w-full bg-orange-500/10 border border-orange-500/30 px-4 py-3 rounded-2xl flex items-center space-x-3 text-xs text-orange-200 shadow-lg">
+              <span class="text-base">🔒</span>
+              <div>
+                <strong class="text-white">Secure Communications Notice:</strong> All data transmissions are protected under strict Sharma Group security standards. Your privacy is our highest priority.
+              </div>
+            </div>
+
+            <div class="max-w-md w-full glass-card p-8 rounded-3xl text-center shadow-2xl space-y-6">
+              <div class="w-16 h-16 bg-gradient-to-tr from-orange-600 to-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-orange-600/40 text-white font-bold text-2xl animate-pulse">YC</div>
+              <div>
+                <h1 class="text-2xl font-black tracking-tight text-white">YaranaChat</h1>
+                <p class="text-[11px] text-orange-400 font-bold tracking-wider mt-1">BY SHARMA GROUP — SECURE GLOBAL COMMUNICATIONS</p>
+              </div>
+
+              <!-- REAL GOOGLE SIGN IN CONTAINER ONLY -->
+              <div class="pt-2 flex flex-col items-center justify-center space-y-4">
+                <div id="g_id_onload"
+                     data-client_id="580182481566-ohhluh51udp8kc3i31jrb3oqgli1hksb.apps.googleusercontent.com"
+                     data-callback="handleGoogleSignIn"
+                     data-auto_prompt="false">
+                </div>
+                <div class="g_id_signin"
+                     data-type="standard"
+                     data-shape="pill"
+                     data-theme="filled_black"
+                     data-text="sign_in_with"
+                     data-size="large"
+                     data-logo_alignment="left">
+                </div>
+              </div>
+
+              <!-- LEGAL FOOTER LINKS -->
+              <div class="pt-4 border-t border-white/10 flex justify-center space-x-6 text-[11px] text-gray-400">
+                <button onclick="openLegal('privacy')" class="hover:text-orange-400 transition cursor-pointer">Privacy Policy</button>
+                <span>•</span>
+                <button onclick="openLegal('terms')" class="hover:text-orange-400 transition cursor-pointer">Terms of Service</button>
+              </div>
+            </div>
+
+            <!-- BRANDING CARDS -->
+            <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl w-full">
+              <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
+                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">YouTube →</div>
+                <div class="text-xs font-bold text-white truncate">Sharma Academy</div>
+                <div class="text-[10px] text-gray-400 truncate">@sharmagroup_official</div>
+              </a>
+              <a href="https://x.com/SharmaGroup2026" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
+                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">X Network →</div>
+                <div class="text-xs font-bold text-white truncate">Sharma Group</div>
+                <div class="text-[10px] text-gray-400 truncate">@SharmaGroup2026</div>
+              </a>
+              <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
+                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">WhatsApp →</div>
+                <div class="text-xs font-bold text-white truncate">Broadcast Hub</div>
+                <div class="text-[10px] text-gray-400 truncate">Official Channel</div>
+              </a>
+              <a href="https://t.me/SharmaGroup2026" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
+                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">Telegram →</div>
+                <div class="text-xs font-bold text-white truncate">Community</div>
+                <div class="text-[10px] text-gray-400 truncate">@SharmaGroup2026</div>
+              </a>
+            </div>
+          </div>`;
+        
+        if (window.google && window.google.accounts) {
+          try {
+            google.accounts.id.initialize({
+              client_id: "580182481566-ohhluh51udp8kc3i31jrb3oqgli1hksb.apps.googleusercontent.com",
+              callback: window.handleGoogleSignIn
+            });
+            google.accounts.id.renderButton(
+              document.querySelector(".g_id_signin"),
+              { theme: "filled_black", size: "large", shape: "pill" }
+            );
+          } catch(err) { console.error(err); }
+        }
+        
+        // Render Legal Modal if open on auth screen
+        if (activeLegalModal) {
+          app.innerHTML += renderLegalModalHTML();
+        }
+        return;
+      }
+
+      app.innerHTML = `
+        <!-- TOP HEADER BAR -->
+        <header class="h-16 border-b border-white/10 bg-[#0c101c]/90 backdrop-blur px-6 flex items-center justify-between shrink-0 shadow-lg">
+          <div class="flex items-center space-x-3">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center font-bold text-white text-xs">YC</div>
+            <div>
+              <h1 class="font-bold text-sm tracking-wide">YaranaChat</h1>
+              <p class="text-[9px] text-orange-400 font-bold">BY SHARMA GROUP</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-3">
+            <button onclick="toggleSound()" class="px-3.5 py-1.5 bg-[#1a2338] hover:bg-[#25324e] border border-white/5 rounded-full text-xs font-medium transition cursor-pointer flex items-center space-x-1.5">
+              <span>${soundEnabled ? '🔔' : '🔕'}</span>
+              <span class="hidden sm:inline">Sound: ${soundEnabled ? 'ON' : 'OFF'}</span>
+            </button>
+            <button onclick="toggleFeedback(true)" class="px-4 py-1.5 bg-[#1a2338] hover:bg-[#25324e] border border-white/5 rounded-full text-xs font-medium transition cursor-pointer">Feedback</button>
+            <span class="px-4 py-1.5 bg-[#1a2338] border border-white/5 rounded-full text-xs font-medium text-orange-300">${currentUser.name}</span>
+            <button onclick="logout()" class="px-4 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/20 rounded-full text-xs font-medium transition cursor-pointer">Logout</button>
+          </div>
+        </header>
+
+        <!-- MAIN DASHBOARD BODY -->
+        <div class="flex-1 flex overflow-hidden p-6 gap-6 max-w-[1600px] w-full mx-auto">
+          
+          <!-- LEFT SIDEBAR PANEL -->
+          <div class="w-80 glass-card rounded-2xl flex flex-col overflow-hidden shadow-xl shrink-0">
+            <div class="p-4 border-b border-white/10 space-y-3">
+              <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Find Connection</p>
+              <div class="space-y-2">
+                <input type="text" placeholder="Enter Gmail address..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500">
+                <button onclick="executeSearch()" class="w-full py-2.5 bg-[#25324a] hover:bg-[#2f3f5e] border border-white/5 rounded-xl text-xs font-semibold transition cursor-pointer">Search User</button>
+              </div>
+            </div>
+
+            <div class="p-4 flex-1 overflow-y-auto space-y-4">
+              <div>
+                <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase mb-2">My Friends / Results</p>
+                <div class="space-y-2">
+                  ${searchResults.length === 0 ? '<p class="text-xs text-gray-500">No matching connections found</p>' : ''}
+                  ${searchResults.map(u => `
+                    <div onclick="selectChat('${u._id}', '${u.name}')" class="p-3 bg-[#161d2f] hover:bg-[#1e273d] border border-white/5 rounded-xl cursor-pointer transition ${activeChatUser?._id === u._id ? 'border-orange-500/50 bg-[#1e273d]' : ''}">
+                      <p class="text-xs font-bold">${u.name}</p>
+                      <p class="text-[10px] text-gray-400 truncate">${u.email}</p>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+
+            <!-- LEGAL FOOTER IN SIDEBAR -->
+            <div class="p-3 border-t border-white/10 bg-[#0c101c] flex justify-around text-[10px] text-gray-400">
+              <button onclick="openLegal('privacy')" class="hover:text-orange-400 cursor-pointer">Privacy Policy</button>
+              <span>•</span>
+              <button onclick="openLegal('terms')" class="hover:text-orange-400 cursor-pointer">Terms of Service</button>
+            </div>
+          </div>
+
+          <!-- RIGHT CHAT / WELCOME PANEL -->
+          <div class="flex-1 glass-card rounded-2xl flex flex-col overflow-hidden shadow-xl">
+            ${activeChatUser ? `
+              <div class="p-4 border-b border-white/10 bg-[#121826] flex items-center space-x-3">
+                <div class="w-8 h-8 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-xs">${activeChatUser.name[0]}</div>
+                <h3 class="font-bold text-sm">${activeChatUser.name}</h3>
+              </div>
+              <div class="flex-1 p-6 overflow-y-auto space-y-3">
+                ${messages.map(m => `
+                  <div class="flex ${m.sender === currentUser._id ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-md px-4 py-2.5 rounded-2xl text-xs ${m.sender === currentUser._id ? 'bg-orange-600 text-white rounded-br-none shadow-md' : 'bg-[#182136] text-gray-200 rounded-bl-none border border-white/5'}">
+                      ${m.text}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <form onsubmit="sendMessage(event)" class="p-4 border-t border-white/10 bg-[#121826] flex space-x-3">
+                <input id="msg-input" type="text" placeholder="Type a message..." class="flex-1 bg-[#03050c] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-orange-500">
+                <button type="submit" class="px-6 bg-orange-600 hover:bg-orange-500 rounded-xl font-semibold text-xs text-white transition cursor-pointer shadow-lg shadow-orange-600/20">Send</button>
+              </form>
+            ` : `
+              <div class="flex-1 flex flex-col">
+                <div class="flex-1 flex items-center justify-center p-8 text-center text-gray-500">
+                  <div>
+                    <h2 class="text-lg font-bold text-gray-300">Select a connection to start messaging</h2>
+                    <p class="text-xs text-gray-500 mt-1">Search user email on the left panel to begin a secure session.</p>
+                  </div>
+                </div>
+                <div class="grid grid-cols-4 gap-4 p-6 border-t border-white/10 bg-[#0d121f]">
+                  <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block hover:border-orange-500/40 transition">
+                    <p class="text-xs font-bold text-gray-200">WhatsApp Channel</p>
+                    <p class="text-[10px] text-gray-400 mt-0.5">Official updates & announcements.</p>
+                  </a>
+                  <a href="https://x.com/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block hover:border-orange-500/40 transition">
+                    <p class="text-xs font-bold text-gray-200">X (Twitter)</p>
+                    <p class="text-[10px] text-gray-400 mt-0.5">News and feature roadmaps.</p>
+                  </a>
+                  <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl border-l-2 border-l-orange-500 block hover:border-orange-500/40 transition">
+                    <p class="text-xs font-bold text-gray-200">YouTube Channel</p>
+                    <p class="text-[10px] text-gray-400 mt-0.5">Official releases & dev logs.</p>
+                  </a>
+                  <a href="https://t.me/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block hover:border-orange-500/40 transition">
+                    <p class="text-xs font-bold text-gray-200">Telegram Hub</p>
+                    <p class="text-[10px] text-gray-400 mt-0.5">Community support chat.</p>
+                  </a>
+                </div>
+              </div>
+            `}
+          </div>
+
+        </div>
+
+        <!-- FEEDBACK MODAL -->
+        ${showFeedbackModal ? `
+          <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div class="glass-card p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl border border-white/10">
+              <h3 class="font-bold text-sm">Send Feedback</h3>
+              <textarea id="feedback-msg" rows="3" placeholder="Write feedback..." class="w-full bg-[#03050c] border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-orange-500 resize-none"></textarea>
+              <div class="flex space-x-2">
+                <button onclick="submitFeedback()" class="flex-1 py-2 bg-orange-600 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-lg shadow-orange-600/30">Submit</button>
+                <button onclick="toggleFeedback(false)" class="flex-1 py-2 bg-white/10 rounded-xl text-xs font-semibold text-gray-300 cursor-pointer">Cancel</button>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+      `;
+
+      if (activeLegalModal) {
+        app.innerHTML += renderLegalModalHTML();
+      }
+    }
+
+    function renderLegalModalHTML() {
+      const isPrivacy = activeLegalModal === 'privacy';
+      return `
+        <div class="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div class="glass-card p-8 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl border border-white/15">
+            <div class="flex justify-between items-center border-b border-white/10 pb-4">
+              <h3 class="font-bold text-base text-orange-400">${isPrivacy ? 'Privacy Policy — YaranaChat' : 'Terms of Service — YaranaChat'}</h3>
+              <button onclick="closeLegal()" class="text-gray-400 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto text-xs text-gray-300 space-y-3 leading-relaxed pr-2">
+              ${isPrivacy ? `
+                <p><strong>Effective Date:</strong> January 2026</p>
+                <p>Sharma Group ("we", "our", or "us") operates YaranaChat. This Privacy Policy explains how we collect, use, and safeguard your information when you use our secure communication platform.</p>
+                <p><strong>1. Information We Collect:</strong> We collect basic profile information provided via Google OAuth authentication (such as your Google Account ID, display name, and registered email address) along with message data transmitted during active messaging sessions.</p>
+                <p><strong>2. Data Security & Storage:</strong> All chat histories are securely stored in our encrypted cloud databases (MongoDB Atlas) to enable seamless synchronization across multiple devices when you re-authenticate.</p>
+                <p><strong>3. Third-Party Services:</strong> We use Google Identity Services for authentication. Google's collection and handling of your credentials are governed by Google's respective privacy policies.</p>
+                <p><strong>4. User Rights:</strong> You retain full control over your account. You can request complete deletion of your data or session termination at any time by contacting our support channels.</p>
+              ` : `
+                <p><strong>Effective Date:</strong> January 2026</p>
+                <p>Welcome to YaranaChat, developed by Sharma Group. By accessing or using our platform, you agree to comply with and be bound by these Terms of Service.</p>
+                <p><strong>1. Acceptable Use:</strong> You agree not to use YaranaChat for any unlawful, harassing, defamatory, or malicious activities. Violation of these rules will result in immediate account termination.</p>
+                <p><strong>2. Account Security:</strong> You are responsible for maintaining the security of your Google account credentials used to log into the platform. Sharma Group is not liable for unauthorized access resulting from user negligence.</p>
+                <p><strong>3. Service Availability:</strong> While we maintain high availability through cloud architecture, YaranaChat is provided on an "as-is" and "as-available" basis without warranties of continuous uptime.</p>
+                <p><strong>4. Modifications:</strong> Sharma Group reserves the right to update these terms at any time. Continued use of the platform constitutes acceptance of modified terms.</p>
+              `}
+            </div>
+            <div class="pt-3 border-t border-white/10 flex justify-end">
+              <button onclick="closeLegal()" class="px-6 py-2.5 bg-orange-600 hover:bg-orange-500 rounded-xl text-xs font-semibold text-white transition cursor-pointer">Close</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    render();
+  </script>
+</body>
+</html>

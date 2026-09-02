@@ -1,0 +1,17 @@
+{
+  "name": "yaranachat",
+  "version": "1.0.0",
+  "description": "Secure real-time chat application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.2",
+    "mongoose": "^9.9.4",
+    "nedb": "^1.8.0",
+    "socket.io": "^4.8.3"
+  }
+}
