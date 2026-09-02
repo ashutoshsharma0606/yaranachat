@@ -67,10 +67,9 @@
     let searchResults = [];
     let searchQuery = '';
     let showFeedbackModal = false;
-    let activeLegalModal = null; // 'privacy' or 'terms'
+    let activeLegalModal = null;
     let soundEnabled = true;
 
-    // Web Audio API Sound Synthesizer (No external asset files required)
     function playNotificationSound() {
       if (!soundEnabled) return;
       try {
@@ -78,8 +77,8 @@
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
         oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 note
-        oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.08); // A5 note
+        oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.08);
         gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
         oscillator.connect(gainNode);
@@ -111,8 +110,10 @@
           email: googleUser.email,
           picture: googleUser.picture 
         };
+        
         socket.emit('join_room', currentUser);
         executeSearch();
+        render();
       } catch (e) {
         console.error('Google Auth decoding error:', e);
       }
@@ -146,7 +147,6 @@
         const res = await fetch(`/api/messages/${currentUser._id}/${id}`);
         messages = await res.json();
       } catch (err) {
-        console.error('Failed to load chat history:', err);
         messages = [];
       }
       render();
@@ -210,7 +210,6 @@
         app.innerHTML = `
           <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
             
-            <!-- SECURITY & SAFETY BANNER -->
             <div class="mb-6 max-w-md w-full bg-orange-500/10 border border-orange-500/30 px-4 py-3 rounded-2xl flex items-center space-x-3 text-xs text-orange-200 shadow-lg">
               <span class="text-base">🔒</span>
               <div>
@@ -225,7 +224,6 @@
                 <p class="text-[11px] text-orange-400 font-bold tracking-wider mt-1">BY SHARMA GROUP — SECURE GLOBAL COMMUNICATIONS</p>
               </div>
 
-              <!-- REAL GOOGLE SIGN IN CONTAINER ONLY -->
               <div class="pt-2 flex flex-col items-center justify-center space-y-4">
                 <div id="g_id_onload"
                      data-client_id="580182481566-ohhluh51udp8kc3i31jrb3oqgli1hksb.apps.googleusercontent.com"
@@ -242,7 +240,6 @@
                 </div>
               </div>
 
-              <!-- LEGAL FOOTER LINKS -->
               <div class="pt-4 border-t border-white/10 flex justify-center space-x-6 text-[11px] text-gray-400">
                 <button onclick="openLegal('privacy')" class="hover:text-orange-400 transition cursor-pointer">Privacy Policy</button>
                 <span>•</span>
@@ -250,27 +247,22 @@
               </div>
             </div>
 
-            <!-- BRANDING CARDS -->
             <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl w-full">
               <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">YouTube →</div>
+                <div class="text-orange-400 text-xs font-bold mb-1">YouTube →</div>
                 <div class="text-xs font-bold text-white truncate">Sharma Group</div>
-                <div class="text-[10px] text-gray-400 truncate">@sharmagroup_official</div>
               </a>
               <a href="https://x.com/SharmaGroup2026" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">X Network →</div>
+                <div class="text-orange-400 text-xs font-bold mb-1">X Network →</div>
                 <div class="text-xs font-bold text-white truncate">Sharma Group</div>
-                <div class="text-[10px] text-gray-400 truncate">@SharmaGroup2026</div>
               </a>
               <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">WhatsApp →</div>
+                <div class="text-orange-400 text-xs font-bold mb-1">WhatsApp →</div>
                 <div class="text-xs font-bold text-white truncate">Broadcast Hub</div>
-                <div class="text-[10px] text-gray-400 truncate">Official Channel</div>
               </a>
               <a href="https://t.me/SharmaGroup2026" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1 group-hover:translate-x-1 transition-transform">Telegram →</div>
+                <div class="text-orange-400 text-xs font-bold mb-1">Telegram →</div>
                 <div class="text-xs font-bold text-white truncate">Community</div>
-                <div class="text-[10px] text-gray-400 truncate">@SharmaGroup2026</div>
               </a>
             </div>
           </div>`;
@@ -288,7 +280,6 @@
           } catch(err) { console.error(err); }
         }
         
-        // Render Legal Modal if open on auth screen
         if (activeLegalModal) {
           app.innerHTML += renderLegalModalHTML();
         }
@@ -296,7 +287,6 @@
       }
 
       app.innerHTML = `
-        <!-- TOP HEADER BAR -->
         <header class="h-16 border-b border-white/10 bg-[#0c101c]/90 backdrop-blur px-6 flex items-center justify-between shrink-0 shadow-lg">
           <div class="flex items-center space-x-3">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center font-bold text-white text-xs">YC</div>
@@ -316,10 +306,7 @@
           </div>
         </header>
 
-        <!-- MAIN DASHBOARD BODY -->
         <div class="flex-1 flex overflow-hidden p-6 gap-6 max-w-[1600px] w-full mx-auto">
-          
-          <!-- LEFT SIDEBAR PANEL -->
           <div class="w-80 glass-card rounded-2xl flex flex-col overflow-hidden shadow-xl shrink-0">
             <div class="p-4 border-b border-white/10 space-y-3">
               <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Find Connection</p>
@@ -344,7 +331,6 @@
               </div>
             </div>
 
-            <!-- LEGAL FOOTER IN SIDEBAR -->
             <div class="p-3 border-t border-white/10 bg-[#0c101c] flex justify-around text-[10px] text-gray-400">
               <button onclick="openLegal('privacy')" class="hover:text-orange-400 cursor-pointer">Privacy Policy</button>
               <span>•</span>
@@ -352,7 +338,6 @@
             </div>
           </div>
 
-          <!-- RIGHT CHAT / WELCOME PANEL -->
           <div class="flex-1 glass-card rounded-2xl flex flex-col overflow-hidden shadow-xl">
             ${activeChatUser ? `
               <div class="p-4 border-b border-white/10 bg-[#121826] flex items-center space-x-3">
@@ -381,30 +366,24 @@
                   </div>
                 </div>
                 <div class="grid grid-cols-4 gap-4 p-6 border-t border-white/10 bg-[#0d121f]">
-                  <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block hover:border-orange-500/40 transition">
+                  <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
                     <p class="text-xs font-bold text-gray-200">WhatsApp Channel</p>
-                    <p class="text-[10px] text-gray-400 mt-0.5">Official updates & announcements.</p>
                   </a>
-                  <a href="https://x.com/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block hover:border-orange-500/40 transition">
+                  <a href="https://x.com/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
                     <p class="text-xs font-bold text-gray-200">X (Twitter)</p>
-                    <p class="text-[10px] text-gray-400 mt-0.5">News and feature roadmaps.</p>
                   </a>
-                  <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl border-l-2 border-l-orange-500 block hover:border-orange-500/40 transition">
+                  <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
                     <p class="text-xs font-bold text-gray-200">YouTube Channel</p>
-                    <p class="text-[10px] text-gray-400 mt-0.5">Official releases & dev logs.</p>
                   </a>
-                  <a href="https://t.me/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block hover:border-orange-500/40 transition">
+                  <a href="https://t.me/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
                     <p class="text-xs font-bold text-gray-200">Telegram Hub</p>
-                    <p class="text-[10px] text-gray-400 mt-0.5">Community support chat.</p>
                   </a>
                 </div>
               </div>
             `}
           </div>
-
         </div>
 
-        <!-- FEEDBACK MODAL -->
         ${showFeedbackModal ? `
           <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div class="glass-card p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl border border-white/10">
@@ -430,25 +409,11 @@
         <div class="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div class="glass-card p-8 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl border border-white/15">
             <div class="flex justify-between items-center border-b border-white/10 pb-4">
-              <h3 class="font-bold text-base text-orange-400">${isPrivacy ? 'Privacy Policy — YaranaChat' : 'Terms of Service — YaranaChat'}</h3>
+              <h3 class="font-bold text-base text-orange-400">${isPrivacy ? 'Privacy Policy' : 'Terms of Service'}</h3>
               <button onclick="closeLegal()" class="text-gray-400 hover:text-white text-lg font-bold cursor-pointer">✕</button>
             </div>
             <div class="flex-1 overflow-y-auto text-xs text-gray-300 space-y-3 leading-relaxed pr-2">
-              ${isPrivacy ? `
-                <p><strong>Effective Date:</strong> January 2026</p>
-                <p>Sharma Group ("we", "our", or "us") operates YaranaChat. This Privacy Policy explains how we collect, use, and safeguard your information when you use our secure communication platform.</p>
-                <p><strong>1. Information We Collect:</strong> We collect basic profile information provided via Google OAuth authentication (such as your Google Account ID, display name, and registered email address) along with message data transmitted during active messaging sessions.</p>
-                <p><strong>2. Data Security & Storage:</strong> All chat histories are securely stored in our encrypted cloud databases (MongoDB Atlas) to enable seamless synchronization across multiple devices when you re-authenticate.</p>
-                <p><strong>3. Third-Party Services:</strong> We use Google Identity Services for authentication. Google's collection and handling of your credentials are governed by Google's respective privacy policies.</p>
-                <p><strong>4. User Rights:</strong> You retain full control over your account. You can request complete deletion of your data or session termination at any time by contacting our support channels.</p>
-              ` : `
-                <p><strong>Effective Date:</strong> January 2026</p>
-                <p>Welcome to YaranaChat, developed by Sharma Group. By accessing or using our platform, you agree to comply with and be bound by these Terms of Service.</p>
-                <p><strong>1. Acceptable Use:</strong> You agree not to use YaranaChat for any unlawful, harassing, defamatory, or malicious activities. Violation of these rules will result in immediate account termination.</p>
-                <p><strong>2. Account Security:</strong> You are responsible for maintaining the security of your Google account credentials used to log into the platform. Sharma Group is not liable for unauthorized access resulting from user negligence.</p>
-                <p><strong>3. Service Availability:</strong> While we maintain high availability through cloud architecture, YaranaChat is provided on an "as-is" and "as-available" basis without warranties of continuous uptime.</p>
-                <p><strong>4. Modifications:</strong> Sharma Group reserves the right to update these terms at any time. Continued use of the platform constitutes acceptance of modified terms.</p>
-              `}
+              <p>${isPrivacy ? 'Privacy policy content for secure handling of user data via Google OAuth and chat storage.' : 'Terms of service agreement for using YaranaChat responsibly.'}</p>
             </div>
             <div class="pt-3 border-t border-white/10 flex justify-end">
               <button onclick="closeLegal()" class="px-6 py-2.5 bg-orange-600 hover:bg-orange-500 rounded-xl text-xs font-semibold text-white transition cursor-pointer">Close</button>
