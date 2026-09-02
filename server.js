@@ -11,111 +11,144 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://ashutoshsharma61667_db_user:xYqRjAazUbNblPLk@cluster0.nu1vila.mongodb.net/yaranachat?retryWrites=true&w=majority&appName=Cluster0';
+// Connect to MongoDB
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/yaranachat';
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB Atlas Database'))
+  .then(() => console.log('MongoDB connected successfully'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+// Define User Schema
+const userSchema = new mongoose.Schema({
+  _id: { type: String, required: true }, // Google sub ID
+  name: { type: String, required: true },
+  email: { type: String, required: true },
+  picture: { type: String },
+  friends: [{ type: String }],
+  pendingRequests: [{ type: String }],
+  sentRequests: [{ type: String }]
+});
+const User = mongoose.model('User', userSchema);
+
+// Define Message Schema
 const messageSchema = new mongoose.Schema({
   sender: { type: String, required: true },
   recipient: { type: String, required: true },
   text: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
 
-const userSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  friends: { type: [String], default: [] },
-  pendingRequests: { type: [String], default: [] },
-  sentRequests: { type: [String], default: [] }
+// Define Feedback Schema
+const feedbackSchema = new mongoose.Schema({
+  name: String,
+  email: String,
+  message: String,
+  createdAt: { type: Date, default: Date.now }
 });
-const User = mongoose.model('User', userSchema);
+const Feedback = mongoose.model('Feedback', feedbackSchema);
+
+// API: Get or Create User
+app.get('/api/user/:id', async (req, res) => {
+  try {
+    let user = await User.findById(req.params.id);
+    if (!user) {
+      // Fallback auto-creation if user hasn't been saved yet
+      user = new User({
+        _id: req.params.id,
+        name: 'User',
+        email: '',
+        friends: [],
+        pendingRequests: [],
+        sentRequests: []
+      });
+      await user.save();
+    }
+    res.json(user);
+  } catch (err) {
+    console.error('Error fetching user:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // API: Search Users
 app.get('/api/users/search', async (req, res) => {
   try {
-    const query = req.query.q ? req.query.q.trim() : '';
-    const currentUserId = req.query.currentUserId;
-    if (!query) return res.json([]);
-
+    const { q, currentUserId } = req.query;
+    if (!q) return res.json([]);
+    
     const users = await User.find({
       _id: { $ne: currentUserId },
       $or: [
-        { email: { $regex: query, $options: 'i' } },
-        { name: { $regex: query, $options: 'i' } }
+        { name: { $regex: q, $options: 'i' } },
+        { email: { $regex: q, $options: 'i' } }
       ]
     }).limit(10);
-
+    
     res.json(users);
   } catch (err) {
-    console.error('Search error:', err);
-    res.status(500).json({ error: 'Search failed' });
+    console.error('Error searching users:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// API: Get User Details & Relationships
-app.get('/api/user/:id', async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch user' });
-  }
-});
-
-// API: Fetch Message History (Only if friends)
+// API: Get Messages between two users
 app.get('/api/messages/:user1/:user2', async (req, res) => {
   try {
     const { user1, user2 } = req.params;
-    const u1 = await User.findById(user1);
-    if (!u1 || !u1.friends.includes(user2)) {
-      return res.status(403).json({ error: 'Not friends' });
-    }
-
-    const history = await Message.find({
+    const messages = await Message.find({
       $or: [
         { sender: user1, recipient: user2 },
         { sender: user2, recipient: user1 }
       ]
-    }).sort({ timestamp: 1 });
-    res.json(history);
+    }).sort({ createdAt: 1 });
+    res.json(messages);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch history' });
+    console.error('Error fetching messages:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// API: Feedback endpoint
-app.post('/api/feedback', (req, res) => {
-  console.log('Feedback received:', req.body);
-  res.json({ success: true });
+// API: Submit Feedback
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const feedback = new Feedback(req.body);
+    await feedback.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error saving feedback:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
+// Socket.io Handlers
 io.on('connection', (socket) => {
   socket.on('join_room', async (userData) => {
     try {
-      if (typeof userData === 'object' && userData._id) {
-        socket.join(userData._id);
-        await User.findOneAndUpdate(
-          { _id: userData._id },
-          { name: userData.name, email: userData.email },
-          { upsert: true, new: true }
-        );
+      socket.join(userData._id);
+      let user = await User.findById(userData._id);
+      if (!user) {
+        user = new User({
+          _id: userData._id,
+          name: userData.name,
+          email: userData.email,
+          picture: userData.picture || '',
+          friends: [],
+          pendingRequests: [],
+          sentRequests: []
+        });
+        await user.save();
       }
     } catch (err) {
-      console.error('Error joining room/saving user:', err);
+      console.error('Error in join_room:', err);
     }
   });
 
   socket.on('send_friend_request', async ({ senderId, recipientId }) => {
     try {
-      await User.findByIdAndUpdate(recipientId, { $addToSet: { pendingRequests: senderId } });
       await User.findByIdAndUpdate(senderId, { $addToSet: { sentRequests: recipientId } });
+      await User.findByIdAndUpdate(recipientId, { $addToSet: { pendingRequests: senderId } });
       io.to(recipientId).emit('friend_request_received', { senderId });
-      io.to(senderId).emit('friend_request_sent', { recipientId });
+      socket.emit('friend_request_sent', { recipientId });
     } catch (err) {
       console.error('Error sending friend request:', err);
     }
@@ -131,35 +164,26 @@ io.on('connection', (socket) => {
         $pull: { sentRequests: userId },
         $addToSet: { friends: userId }
       });
-
-      io.to(userId).emit('friend_request_accepted', { friendId: requesterId });
       io.to(requesterId).emit('friend_request_accepted', { friendId: userId });
+      socket.emit('friend_request_accepted', { friendId: requesterId });
     } catch (err) {
-      console.error('Error accepting request:', err);
+      console.error('Error accepting friend request:', err);
     }
   });
 
-  socket.on('send_message', async (data) => {
+  socket.on('send_message', async ({ sender, recipient, text }) => {
     try {
-      const senderObj = await User.findById(data.sender);
-      if (!senderObj || !senderObj.friends.includes(data.recipient)) return;
-
-      const newMessage = new Message({
-        sender: data.sender,
-        recipient: data.recipient,
-        text: data.text
-      });
-      await newMessage.save();
-
-      io.to(data.recipient).emit('receive_message', newMessage);
-      io.to(data.sender).emit('receive_message', newMessage);
+      const msg = new Message({ sender, recipient, text });
+      await msg.save();
+      io.to(recipient).emit('receive_message', msg);
+      socket.emit('receive_message', msg);
     } catch (err) {
-      console.error('Error saving/sending message:', err);
+      console.error('Error sending message:', err);
     }
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`YaranaChat server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
