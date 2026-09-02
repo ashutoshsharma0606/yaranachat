@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -32,6 +31,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+// API: Search Users (Ensures case-insensitive search and fallback)
 app.get('/api/users/search', async (req, res) => {
   try {
     const query = req.query.q || '';
@@ -44,6 +44,7 @@ app.get('/api/users/search', async (req, res) => {
   }
 });
 
+// API: Fetch Message History
 app.get('/api/messages/:user1/:user2', async (req, res) => {
   try {
     const { user1, user2 } = req.params;
@@ -59,6 +60,7 @@ app.get('/api/messages/:user1/:user2', async (req, res) => {
   }
 });
 
+// API: Feedback endpoint
 app.post('/api/feedback', (req, res) => {
   console.log('Feedback received:', req.body);
   res.json({ success: true });
@@ -74,8 +76,6 @@ io.on('connection', (socket) => {
           { name: userData.name, email: userData.email },
           { upsert: true, new: true }
         );
-      } else if (typeof userData === 'string') {
-        socket.join(userData);
       }
     } catch (err) {
       console.error('Error joining room/saving user:', err);

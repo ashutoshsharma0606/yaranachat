@@ -123,6 +123,7 @@
       currentUser = null;
       activeChatUser = null;
       messages = [];
+      searchResults = [];
       render();
     }
 
@@ -132,6 +133,8 @@
 
     async function executeSearch() {
       try {
+        const inputElem = document.getElementById('search-input');
+        if (inputElem) searchQuery = inputElem.value;
         const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
         searchResults = await res.json();
         render();
@@ -168,13 +171,15 @@
     }
 
     async function submitFeedback() {
-      const text = document.getElementById('feedback-msg').value;
+      const feedbackInput = document.getElementById('feedback-msg');
+      const text = feedbackInput ? feedbackInput.value : '';
       if (!text || !text.trim()) return;
       await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: currentUser.name, email: currentUser.email, message: text })
       });
+      alert('Feedback submitted successfully!');
       toggleFeedback(false);
     }
 
@@ -209,7 +214,6 @@
       if (!currentUser) {
         app.innerHTML = `
           <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-            
             <div class="mb-6 max-w-md w-full bg-orange-500/10 border border-orange-500/30 px-4 py-3 rounded-2xl flex items-center space-x-3 text-xs text-orange-200 shadow-lg">
               <span class="text-base">🔒</span>
               <div>
@@ -311,7 +315,7 @@
             <div class="p-4 border-b border-white/10 space-y-3">
               <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Find Connection</p>
               <div class="space-y-2">
-                <input type="text" placeholder="Enter Gmail address..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500">
+                <input id="search-input" type="text" placeholder="Enter Gmail address..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500">
                 <button onclick="executeSearch()" class="w-full py-2.5 bg-[#25324a] hover:bg-[#2f3f5e] border border-white/5 rounded-xl text-xs font-semibold transition cursor-pointer">Search User</button>
               </div>
             </div>
