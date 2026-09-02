@@ -27,25 +27,28 @@ const Message = mongoose.model('Message', messageSchema);
 const userSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true }
+  email: { type: String, required: true, unique: true },
+  friends: { type: [String], default: [] },
+  pendingRequests: { type: [String], default: [] },
+  sentRequests: { type: [String], default: [] }
 });
 const User = mongoose.model('User', userSchema);
 
-// API: Search Users (Supports empty query fallback to list recent users)
+// API: Search Users
 app.get('/api/users/search', async (req, res) => {
   try {
     const query = req.query.q ? req.query.q.trim() : '';
-    let users;
-    if (query === '') {
-      users = await User.find({}).limit(20);
-    } else {
-      users = await User.find({
-        $or: [
-          { email: { $regex: query, $options: 'i' } },
-          { name: { $regex: query, $options: 'i' } }
-        ]
-      }).limit(10);
-    }
+    const currentUserId = req.query.currentUserId;
+    if (!query) return res.json([]);
+
+    const users = await User.find({
+      _id: { $ne: currentUserId },
+      $or: [
+        { email: { $regex: query, $options: 'i' } },
+        { name: { $regex: query, $options: 'i' } }
+      ]
+    }).limit(10);
+
     res.json(users);
   } catch (err) {
     console.error('Search error:', err);
@@ -53,10 +56,26 @@ app.get('/api/users/search', async (req, res) => {
   }
 });
 
-// API: Fetch Message History
+// API: Get User Details & Relationships
+app.get('/api/user/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+// API: Fetch Message History (Only if friends)
 app.get('/api/messages/:user1/:user2', async (req, res) => {
   try {
     const { user1, user2 } = req.params;
+    const u1 = await User.findById(user1);
+    if (!u1 || !u1.friends.includes(user2)) {
+      return res.status(403).json({ error: 'Not friends' });
+    }
+
     const history = await Message.find({
       $or: [
         { sender: user1, recipient: user2 },
@@ -91,8 +110,40 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('send_friend_request', async ({ senderId, recipientId }) => {
+    try {
+      await User.findByIdAndUpdate(recipientId, { $addToSet: { pendingRequests: senderId } });
+      await User.findByIdAndUpdate(senderId, { $addToSet: { sentRequests: recipientId } });
+      io.to(recipientId).emit('friend_request_received', { senderId });
+      io.to(senderId).emit('friend_request_sent', { recipientId });
+    } catch (err) {
+      console.error('Error sending friend request:', err);
+    }
+  });
+
+  socket.on('accept_friend_request', async ({ userId, requesterId }) => {
+    try {
+      await User.findByIdAndUpdate(userId, {
+        $pull: { pendingRequests: requesterId },
+        $addToSet: { friends: requesterId }
+      });
+      await User.findByIdAndUpdate(requesterId, {
+        $pull: { sentRequests: userId },
+        $addToSet: { friends: userId }
+      });
+
+      io.to(userId).emit('friend_request_accepted', { friendId: requesterId });
+      io.to(requesterId).emit('friend_request_accepted', { friendId: userId });
+    } catch (err) {
+      console.error('Error accepting request:', err);
+    }
+  });
+
   socket.on('send_message', async (data) => {
     try {
+      const senderObj = await User.findById(data.sender);
+      if (!senderObj || !senderObj.friends.includes(data.recipient)) return;
+
       const newMessage = new Message({
         sender: data.sender,
         recipient: data.recipient,

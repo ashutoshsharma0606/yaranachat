@@ -1,4 +1,3 @@
-<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -96,7 +95,7 @@
       render();
     }
 
-    window.handleGoogleSignIn = function(response) {
+    window.handleGoogleSignIn = async function(response) {
       try {
         const base64Url = response.credential.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -109,16 +108,34 @@
           _id: googleUser.sub, 
           name: googleUser.name, 
           email: googleUser.email,
-          picture: googleUser.picture 
+          picture: googleUser.picture,
+          friends: [],
+          pendingRequests: [],
+          sentRequests: []
         };
         
         socket.emit('join_room', currentUser);
-        executeSearch();
+        await refreshUserData();
         render();
       } catch (e) {
         console.error('Google Auth decoding error:', e);
       }
     };
+
+    async function refreshUserData() {
+      if (!currentUser) return;
+      try {
+        const res = await fetch(`/api/user/${currentUser._id}`);
+        if (res.ok) {
+          const data = await res.json();
+          currentUser.friends = data.friends || [];
+          currentUser.pendingRequests = data.pendingRequests || [];
+          currentUser.sentRequests = data.sentRequests || [];
+        }
+      } catch (err) {
+        console.error('Failed to sync user data', err);
+      }
+    }
 
     function logout() {
       currentUser = null;
@@ -134,8 +151,13 @@
     }
 
     async function executeSearch() {
+      if (!searchQuery.trim()) {
+        searchResults = [];
+        render();
+        return;
+      }
       try {
-        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery || '')}`);
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}&currentUserId=${currentUser._id}`);
         searchResults = await res.json();
         render();
       } catch (err) { 
@@ -145,11 +167,23 @@
       }
     }
 
+    function sendFriendRequest(recipientId) {
+      socket.emit('send_friend_request', { senderId: currentUser._id, recipientId });
+    }
+
+    function acceptFriendRequest(requesterId) {
+      socket.emit('accept_friend_request', { userId: currentUser._id, requesterId });
+    }
+
     async function selectChat(id, name) {
       activeChatUser = { _id: id, name: name };
       try {
         const res = await fetch(`/api/messages/${currentUser._id}/${id}`);
-        messages = await res.json();
+        if (res.ok) {
+          messages = await res.json();
+        } else {
+          messages = [];
+        }
       } catch (err) {
         messages = [];
       }
@@ -204,6 +238,23 @@
       input.value = '';
     }
 
+    socket.on('friend_request_sent', async ({ recipientId }) => {
+      await refreshUserData();
+      render();
+    });
+
+    socket.on('friend_request_received', async ({ senderId }) => {
+      await refreshUserData();
+      playNotificationSound();
+      render();
+    });
+
+    socket.on('friend_request_accepted', async ({ friendId }) => {
+      await refreshUserData();
+      playNotificationSound();
+      render();
+    });
+
     socket.on('receive_message', (msg) => {
       if (activeChatUser && (msg.sender === activeChatUser._id || msg.recipient === activeChatUser._id)) {
         if (!messages.some(m => m._id === msg._id)) {
@@ -216,24 +267,20 @@
       }
     });
 
-    function render() {
+    async function render() {
+      if (currentUser) {
+        await refreshUserData();
+      }
       const app = document.getElementById('app');
       
       if (!currentUser) {
         app.innerHTML = `
           <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-            <div class="mb-6 max-w-md w-full bg-orange-500/10 border border-orange-500/30 px-4 py-3 rounded-2xl flex items-center space-x-3 text-xs text-orange-200 shadow-lg">
-              <span class="text-base">🔒</span>
-              <div>
-                <strong class="text-white">Secure Communications Notice:</strong> All data transmissions are protected under strict Sharma Group security standards. Your privacy is our highest priority.
-              </div>
-            </div>
-
             <div class="max-w-md w-full glass-card p-8 rounded-3xl text-center shadow-2xl space-y-6">
-              <div class="w-16 h-16 bg-gradient-to-tr from-orange-600 to-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-orange-600/40 text-white font-bold text-2xl animate-pulse">YC</div>
+              <div class="w-16 h-16 bg-gradient-to-tr from-orange-600 to-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-orange-600/40 text-white font-bold text-2xl">YC</div>
               <div>
                 <h1 class="text-2xl font-black tracking-tight text-white">YaranaChat</h1>
-                <p class="text-[11px] text-orange-400 font-bold tracking-wider mt-1">BY SHARMA GROUP — SECURE GLOBAL COMMUNICATIONS</p>
+                <p class="text-[11px] text-orange-400 font-bold tracking-wider mt-1">SECURE GLOBAL COMMUNICATIONS</p>
               </div>
 
               <div class="pt-2 flex flex-col items-center justify-center space-y-4">
@@ -251,31 +298,6 @@
                      data-logo_alignment="left">
                 </div>
               </div>
-
-              <div class="pt-4 border-t border-white/10 flex justify-center space-x-6 text-[11px] text-gray-400">
-                <button onclick="openLegal('privacy')" class="hover:text-orange-400 transition cursor-pointer">Privacy Policy</button>
-                <span>•</span>
-                <button onclick="openLegal('terms')" class="hover:text-orange-400 transition cursor-pointer">Terms of Service</button>
-              </div>
-            </div>
-
-            <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl w-full">
-              <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1">YouTube →</div>
-                <div class="text-xs font-bold text-white truncate">Sharma Group</div>
-              </a>
-              <a href="https://x.com/SharmaGroup2026" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1">X Network →</div>
-                <div class="text-xs font-bold text-white truncate">Sharma Group</div>
-              </a>
-              <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1">WhatsApp →</div>
-                <div class="text-xs font-bold text-white truncate">Broadcast Hub</div>
-              </a>
-              <a href="https://t.me/SharmaGroup2026" target="_blank" class="glass-card p-4 rounded-2xl text-left block group">
-                <div class="text-orange-400 text-xs font-bold mb-1">Telegram →</div>
-                <div class="text-xs font-bold text-white truncate">Community</div>
-              </a>
             </div>
           </div>`;
         
@@ -291,10 +313,6 @@
             );
           } catch(err) { console.error(err); }
         }
-        
-        if (activeLegalModal) {
-          app.innerHTML += renderLegalModalHTML();
-        }
         return;
       }
 
@@ -308,9 +326,8 @@
             </div>
           </div>
           <div class="flex items-center space-x-3">
-            <button onclick="toggleSound()" class="px-3.5 py-1.5 bg-[#1a2338] hover:bg-[#25324e] border border-white/5 rounded-full text-xs font-medium transition cursor-pointer flex items-center space-x-1.5">
-              <span>${soundEnabled ? '🔔' : '🔕'}</span>
-              <span class="hidden sm:inline">Sound: ${soundEnabled ? 'ON' : 'OFF'}</span>
+            <button onclick="toggleSound()" class="px-3.5 py-1.5 bg-[#1a2338] hover:bg-[#25324e] border border-white/5 rounded-full text-xs font-medium transition cursor-pointer">
+              ${soundEnabled ? '🔔 Sound ON' : '🔕 Sound OFF'}
             </button>
             <button onclick="toggleFeedback(true)" class="px-4 py-1.5 bg-[#1a2338] hover:bg-[#25324e] border border-white/5 rounded-full text-xs font-medium transition cursor-pointer">Feedback</button>
             <span class="px-4 py-1.5 bg-[#1a2338] border border-white/5 rounded-full text-xs font-medium text-orange-300">${currentUser.name}</span>
@@ -321,32 +338,68 @@
         <div class="flex-1 flex overflow-hidden p-6 gap-6 max-w-[1600px] w-full mx-auto">
           <div class="w-80 glass-card rounded-2xl flex flex-col overflow-hidden shadow-xl shrink-0">
             <div class="p-4 border-b border-white/10 space-y-3">
-              <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Find Connection</p>
+              <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Search User</p>
               <div class="space-y-2">
-                <input type="text" placeholder="Enter Gmail address..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500">
-                <button onclick="executeSearch()" class="w-full py-2.5 bg-[#25324a] hover:bg-[#2f3f5e] border border-white/5 rounded-xl text-xs font-semibold transition cursor-pointer">Search User</button>
+                <input type="text" placeholder="Enter name or email..." value="${searchQuery}" oninput="handleSearchInput(event)" class="w-full bg-[#03050c] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-orange-500">
+                <button onclick="executeSearch()" class="w-full py-2 bg-[#25324a] hover:bg-[#2f3f5e] border border-white/5 rounded-xl text-xs font-semibold transition cursor-pointer">Search</button>
               </div>
             </div>
 
-            <div class="p-4 flex-1 overflow-y-auto space-y-4">
+            <div class="p-4 flex-1 overflow-y-auto space-y-6">
+              ${searchResults.length > 0 ? `
+                <div>
+                  <p class="text-[11px] font-semibold tracking-wider text-orange-400 uppercase mb-2">Search Results</p>
+                  <div class="space-y-2">
+                    ${searchResults.map(u => {
+                      const isFriend = currentUser.friends.includes(u._id);
+                      const sentAlready = currentUser.sentRequests.includes(u._id);
+                      const hasIncoming = currentUser.pendingRequests.includes(u._id);
+                      return `
+                        <div class="p-3 bg-[#161d2f] border border-white/5 rounded-xl flex items-center justify-between">
+                          <div class="truncate mr-2">
+                            <p class="text-xs font-bold text-white truncate">${u.name}</p>
+                            <p class="text-[10px] text-gray-400 truncate">${u.email}</p>
+                          </div>
+                          <div>
+                            ${isFriend ? '<span class="text-[10px] text-green-400 font-bold">Friends</span>' : 
+                              sentAlready ? '<span class="text-[10px] text-amber-400 font-bold">Requested</span>' :
+                              hasIncoming ? `<button onclick="acceptFriendRequest('${u._id}')" class="px-2.5 py-1 bg-green-600 text-white rounded-lg text-[10px] font-bold cursor-pointer">Accept</button>` :
+                              `<button onclick="sendFriendRequest('${u._id}')" class="px-2.5 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-[10px] font-bold cursor-pointer">+ Add</button>`
+                            }
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              ${currentUser.pendingRequests.length > 0 ? `
+                <div>
+                  <p class="text-[11px] font-semibold tracking-wider text-amber-400 uppercase mb-2">Pending Friend Requests</p>
+                  <div class="space-y-2">
+                    ${currentUser.pendingRequests.map(reqId => `
+                      <div class="p-3 bg-[#1e1c16] border border-amber-500/20 rounded-xl flex items-center justify-between">
+                        <span class="text-xs font-medium text-amber-200">User ID: ${reqId.substring(0,8)}...</span>
+                        <button onclick="acceptFriendRequest('${reqId}')" class="px-3 py-1 bg-green-600 text-white rounded-lg text-[10px] font-bold cursor-pointer">Accept</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
               <div>
-                <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase mb-2">My Friends / Results</p>
+                <p class="text-[11px] font-semibold tracking-wider text-gray-400 uppercase mb-2">My Friends List (${currentUser.friends.length})</p>
                 <div class="space-y-2">
-                  ${searchResults.length === 0 ? '<p class="text-xs text-gray-500">No matching connections found</p>' : ''}
-                  ${searchResults.map(u => `
-                    <div onclick="selectChat('${u._id}', '${u.name}')" class="p-3 bg-[#161d2f] hover:bg-[#1e273d] border border-white/5 rounded-xl cursor-pointer transition ${activeChatUser?._id === u._id ? 'border-orange-500/50 bg-[#1e273d]' : ''}">
-                      <p class="text-xs font-bold">${u.name}</p>
-                      <p class="text-[10px] text-gray-400 truncate">${u.email}</p>
+                  ${currentUser.friends.length === 0 ? '<p class="text-xs text-gray-500">No friends added yet. Search a user to connect.</p>' : ''}
+                  ${currentUser.friends.map(fId => `
+                    <div onclick="selectChat('${fId}', 'Friend (${fId.substring(0,6)})')" class="p-3 bg-[#161d2f] hover:bg-[#1e273d] border border-white/5 rounded-xl cursor-pointer transition ${activeChatUser?._id === fId ? 'border-orange-500/50 bg-[#1e273d]' : ''}">
+                      <p class="text-xs font-bold text-white">Chat Connection</p>
+                      <p class="text-[10px] text-gray-400 truncate">ID: ${fId}</p>
                     </div>
                   `).join('')}
                 </div>
               </div>
-            </div>
-
-            <div class="p-3 border-t border-white/10 bg-[#0c101c] flex justify-around text-[10px] text-gray-400">
-              <button onclick="openLegal('privacy')" class="hover:text-orange-400 cursor-pointer">Privacy Policy</button>
-              <span>•</span>
-              <button onclick="openLegal('terms')" class="hover:text-orange-400 cursor-pointer">Terms of Service</button>
             </div>
           </div>
 
@@ -370,26 +423,10 @@
                 <button type="submit" class="px-6 bg-orange-600 hover:bg-orange-500 rounded-xl font-semibold text-xs text-white transition cursor-pointer shadow-lg shadow-orange-600/20">Send</button>
               </form>
             ` : `
-              <div class="flex-1 flex flex-col">
-                <div class="flex-1 flex items-center justify-center p-8 text-center text-gray-500">
-                  <div>
-                    <h2 class="text-lg font-bold text-gray-300">Select a connection to start messaging</h2>
-                    <p class="text-xs text-gray-500 mt-1">Search user email on the left panel to begin a secure session.</p>
-                  </div>
-                </div>
-                <div class="grid grid-cols-4 gap-4 p-6 border-t border-white/10 bg-[#0d121f]">
-                  <a href="https://whatsapp.com/channel/0029VbDLj5UChq6KyIUEKP0H" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
-                    <p class="text-xs font-bold text-gray-200">WhatsApp Channel</p>
-                  </a>
-                  <a href="https://x.com/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
-                    <p class="text-xs font-bold text-gray-200">X (Twitter)</p>
-                  </a>
-                  <a href="https://youtube.com/@sharmagroup_official?si=hdwY8cs4D2Cik-lt" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
-                    <p class="text-xs font-bold text-gray-200">YouTube Channel</p>
-                  </a>
-                  <a href="https://t.me/SharmaGroup2026" target="_blank" class="p-3.5 bg-[#151c2d] border border-white/5 rounded-xl block">
-                    <p class="text-xs font-bold text-gray-200">Telegram Hub</p>
-                  </a>
+              <div class="flex-1 flex items-center justify-center p-8 text-center text-gray-500">
+                <div>
+                  <h2 class="text-lg font-bold text-gray-300">Select an accepted friend to start messaging</h2>
+                  <p class="text-xs text-gray-500 mt-1">Search user, send a friend request, and wait for acceptance to chat.</p>
                 </div>
               </div>
             `}
@@ -408,30 +445,6 @@
             </div>
           </div>
         ` : ''}
-      `;
-
-      if (activeLegalModal) {
-        app.innerHTML += renderLegalModalHTML();
-      }
-    }
-
-    function renderLegalModalHTML() {
-      const isPrivacy = activeLegalModal === 'privacy';
-      return `
-        <div class="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div class="glass-card p-8 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl border border-white/15">
-            <div class="flex justify-between items-center border-b border-white/10 pb-4">
-              <h3 class="font-bold text-base text-orange-400">${isPrivacy ? 'Privacy Policy' : 'Terms of Service'}</h3>
-              <button onclick="closeLegal()" class="text-gray-400 hover:text-white text-lg font-bold cursor-pointer">✕</button>
-            </div>
-            <div class="flex-1 overflow-y-auto text-xs text-gray-300 space-y-3 leading-relaxed pr-2">
-              <p>${isPrivacy ? 'Privacy policy content for secure handling of user data via Google OAuth and chat storage.' : 'Terms of service agreement for using YaranaChat responsibly.'}</p>
-            </div>
-            <div class="pt-3 border-t border-white/10 flex justify-end">
-              <button onclick="closeLegal()" class="px-6 py-2.5 bg-orange-600 hover:bg-orange-500 rounded-xl text-xs font-semibold text-white transition cursor-pointer">Close</button>
-            </div>
-          </div>
-        </div>
       `;
     }
 
