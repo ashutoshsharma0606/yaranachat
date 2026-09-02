@@ -31,15 +31,24 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// API: Search Users (Ensures case-insensitive search and fallback)
+// API: Search Users (Supports empty query fallback to list recent users)
 app.get('/api/users/search', async (req, res) => {
   try {
-    const query = req.query.q || '';
-    const users = await User.find({
-      email: { $regex: query, $options: 'i' }
-    }).limit(10);
+    const query = req.query.q ? req.query.q.trim() : '';
+    let users;
+    if (query === '') {
+      users = await User.find({}).limit(20);
+    } else {
+      users = await User.find({
+        $or: [
+          { email: { $regex: query, $options: 'i' } },
+          { name: { $regex: query, $options: 'i' } }
+        ]
+      }).limit(10);
+    }
     res.json(users);
   } catch (err) {
+    console.error('Search error:', err);
     res.status(500).json({ error: 'Search failed' });
   }
 });
